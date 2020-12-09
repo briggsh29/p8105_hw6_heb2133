@@ -104,3 +104,27 @@ model_resuls_df %>%
   filter(term == "victim_raceBlack") %>% 
   knitr::kable(digit = 4)
 ```
+
+Plot that shows estimated ORs and CIs for each city (OR of resolution Male vs Female homicide victims)
+
+```{r}
+model_resuls_df %>% 
+  filter(term == "victim_sexMale") %>% 
+  mutate(city_state = fct_reorder(city_state, OR)) %>% 
+  ggplot(aes(x = city_state, y = OR)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  theme(axis.text = element_text(angle = 90, hjust = 1))
+```
+
+From this plot we can see that the majority of OR estimates are less than 1, meaning that homicides with male victims generally have lower odds of being resolved by arrest. 
+
+## Problem 2
+
+Read and clean birthweight dataset: 
+
+```{r}
+bw_df =
+  read.csv()
+```
+
