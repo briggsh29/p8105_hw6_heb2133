@@ -114,7 +114,8 @@ model_resuls_df %>%
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) + 
-  theme(axis.text = element_text(angle = 90, hjust = 1))
+  theme(axis.text = element_text(angle = 90, hjust = 1)) + 
+  labs(title = "OR for homicide resolution among male versus female victims")
 ```
 
 From this plot we can see that the majority of OR estimates are less than 1, meaning that homicides with male victims generally have lower odds of being resolved by arrest. 
@@ -150,8 +151,6 @@ Propose model for birthweight:
 
 The hypothesized predictors that I wanted to explore in their potential contribution to birthweight are: 1) Gestational age 2) Maternal race 3) Family monthly income 4) Mother's weight gain during pregnancy and 5) Mother's age at delivery. Knowing that gestational age does have an impact on infant birthweight, I wanted to also introduce and examine predictors that brought in environmental or socio-demographic factors - like mother's race and family SES (using family income in this dataset). I used white mothers as the reference group in this model. 
 
-Looking at the density plot below examining the residuals for this model, it looks fairly normally distributed. 
-
 ```{r}
 proposed_model_df = 
   lm(bwt ~ gaweeks + wtgain + fincome + momage + mrace, data = bw_df)
@@ -166,13 +165,23 @@ bw_df %>%
   add_predictions(proposed_model_df) %>% 
   add_residuals(proposed_model_df) %>% 
   ggplot(aes(x = pred, y = resid))+
-  geom_point()
+  geom_point() + 
+  labs(title = "Modeling residuals against fitted 'predicted' values")
 
 bw_df %>% 
   add_residuals(proposed_model_df) %>% 
   ggplot(aes(x = resid))+ 
-  geom_density()
+  geom_density() +
+  labs (title = "overall distribution of residuals")
+
+bw_df %>% 
+  add_residuals(proposed_model_df) %>% 
+  ggplot(aes (x = mrace, y = resid)) + 
+  geom_violin() + 
+  labs(title = "distribution of residuals for maternal race categories")
 ```
+
+After making a scatter plot comparing the residuals against predicted valus for this model, I also made a density plot to get a better view of how the residuals were behaving  - which looks fairly normally distributed. I also wanted to make a violin plot comparing the distribution of residuals for each category of maternal race, as it's the only categorical variable in the model - which, overall, don't look too skewed. 
 
 Comparing proposed model to two others:
 
@@ -231,10 +240,28 @@ cross_df %>%
     names_prefix = "rmse_"
     ) %>% 
   ggplot(aes(x = model, y = rmse)) +
-  geom_violin(
-  )
+  geom_violin() + 
+  labs(title = "comparing model RMSE")
 ```
 
 By looking at the above violin plots, we can see that model 3 (the interaction model) has the lowest RMSE and so has the greatest prediction accuracy. My proposed model, of the three, has the highest RMSE and so has the least prediction accuracy. 
 
 ## Problem 3
+
+Reading in weather data:
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Focusing on simple linear regression with tmax as the response and tmin as the predictor. 
