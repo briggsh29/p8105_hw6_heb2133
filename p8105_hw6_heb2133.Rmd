@@ -1,0 +1,342 @@
+---
+title: "Homework 5"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(rvest)
+
+knitr::opts_chunk$set(
+  fig.width = 6, 
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis", 
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(1)
+```
+
+## Problem 1
+
+Read in data
+
+```{r}
+homicide_df = 
+  read.csv("./data/homicide-data.csv") %>% 
+  janitor::clean_names()
+```
+
+This dataset is from the Washington Post, which mapped over 52,000 homicides and any resulting arrests within 50 of the largest cities in America. Key variables in this dataset include Report date; Victim name, age, and sex; City; State; Latitude and longitude; and the Disposition. There are `r nrow(homicide_df)` rows and `r ncol(homicide_df)` columns in this raw dataset. 
+
+Add variables "city_state", "resolved", and summarize total homicides and total unresolved homicides within cities. 
+
+```{r}
+homicide_df =
+  homicide_df %>% 
+  unite("city_state", city:state, sep = "_", remove = TRUE) %>% 
+  mutate(
+    resolved = case_when(
+      disposition == "Closed without arrest" ~ "unsolved",
+      disposition == "Open/No arrest"        ~ "unsolved",
+      disposition == "Closed by arrest"      ~ "solved")
+  ) %>% 
+  select(city_state, resolved) %>% 
+  filter(city_state != "Tulsa_AL")
+#removing presumably data entry error for "Tulsa_AL"
+
+aggregate_df = 
+  homicide_df %>% 
+  group_by(city_state) %>% 
+  summarise(
+    total_hom = n(),
+    unsolved_hom = sum(resolved == "unsolved")
+  )
+```
+
+For Baltimore_MD, estimate proportion of homicides that are unsolved. 
+
+```{r}
+balt_prop = 
+  prop.test(
+    aggregate_df %>% filter(city_state == "Baltimore_MD") %>% pull(unsolved_hom), 
+    aggregate_df %>% filter(city_state == "Baltimore_MD") %>% pull(total_hom)) %>% 
+  broom::tidy()
+
+balt_prop %>% pull(estimate)
+balt_prop %>% pull(conf.low) 
+balt_prop %>% pull(conf.high)
+```
+
+Run prop.test for each city, extract the proportion and CIs for each:
+
+```{r}
+results_df = 
+  aggregate_df %>%
+  mutate(
+    prop_tests = map2(.x = unsolved_hom, .y = total_hom, ~prop.test(x = .x, n = .y)), 
+    tidy_tests = map(.x = prop_tests, ~broom::tidy(.x))
+  ) %>% 
+  select(-prop_tests) %>% 
+  unnest(tidy_tests) %>% 
+  select(city_state, estimate, conf.low, conf.high)
+
+results_df
+```
+
+Create plot for estimates and CIs:
+
+```{r}
+results_df %>% 
+  mutate(city_state = fct_reorder(city_state, estimate)) %>% 
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+## Problem 2
+
+Create dataframe for the provided longitudinal study data with data from all participants across the 20 csv files. 
+
+```{r}
+path_df = 
+  tibble(
+    path = list.files("ls_data")
+  ) %>% 
+  mutate(path = str_c("ls_data/", path),
+         data = map(path, read_csv)
+         ) %>% 
+  unnest(data)
+```
+
+Tidy the dataframe:
+
+```{r}
+l_study_df = 
+  path_df %>% 
+  rename(file_name = path) %>% 
+  mutate(
+    #creating subject IDs
+    subject_id = file_name,
+    subject_id = str_remove(subject_id, "ls_data/"),
+    subject_id = str_remove(subject_id, ".csv"),
+    subject_id = str_replace(subject_id, "con", "c"),
+    subject_id = str_replace(subject_id, "exp", "e"),
+    #creating study arm variable
+    study_arm = case_when(
+      subject_id == c("c_01", "c_02", "c_03", "c_04", "c_05", 
+                    "c_06", "c_07", "c_08", "c_09", "c_10") ~ "control",
+      subject_id == c("e_01", "e_02", "e_03", "e_04", "e_05", 
+                    "e_06", "e_07", "e_08", "e_09", "e_10") ~ "experimental")
+  ) %>% 
+  pivot_longer(
+    week_1:week_8,
+    names_to = "week_number",
+    names_prefix = "week_",
+    values_to = "observed_values"
+  ) %>% 
+  select(subject_id, study_arm, week_number, observed_values, file_name)
+```
+
+Make a spaghetti plot showing observations on each subject over time. 
+
+```{r}
+l_study_df %>% 
+  ggplot(aes(x = week_number, y = observed_values, color = study_arm)) + 
+  geom_point() +
+  geom_path(aes(group = subject_id), alpha = 0.4) + 
+  labs(title = "Observations for each study subject over time") +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 11),
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(vjust = 0.5, hjust = 1),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 9)
+    )
+```
+
+Looking at this plot, we can see that between the control and experimental arms - subjects in the control arm appeared to have greater observed values compared to those in the experimental arm of the study. Relatively few subjects in the control arm appear to have negative observed values - while several subjects in the experimental arms have negative values recorded. 
+
+## Problem 3
+
+Generate 5000 datasets from the normal distribution with n = 50, sigma = 5, and mu = 0. 
+
+```{r}
+hypoth_test = function(n = 30, mu = 0, sigma = 5) {
+  
+  sim_df =
+    tibble(
+      x = rnorm(n = n, mean = mu, sd = sigma)
+    )
+  
+  sim_df %>% 
+    t.test(alternative = "two.sided", 
+           paired = FALSE, conf.level = 0.95) %>% 
+    broom::tidy()
+  
+}
+
+output_0 = rerun(5000, hypoth_test(mu = 0)) %>% 
+  bind_rows() %>% 
+  select(estimate, p.value)
+#Gives mu estimate and p-value for each of the 5000 samples
+
+output_0
+
+mu_var_list = 
+  list(
+    "mu = 1" = 1,
+    "mu = 2" = 2,
+    "mu = 3" = 3,
+    "mu = 4" = 4,
+    "mu = 5" = 5,
+    "mu = 6" = 6
+  )
+
+#Running for each mu value
+output = vector("list", length = 6)
+
+for (i in 1:6) {
+  
+    output[[i]] = 
+      rerun(5000, hypoth_test(mu = mu_var_list[[i]])
+            ) %>% 
+    bind_rows() %>% 
+    select(estimate, p.value)
+}
+#Runs 5000 simulations for each mu value (reports mu estimate and p-value for each sample)
+```
+
+Plot:proportion of times the null was rejected (y axis) and the true value of μ (x axis)
+
+```{r}
+output_all = vector("list", length = 6)
+
+for (i in 1:6) {
+  
+  output_all[[i]] = rerun(5000, hypoth_test(mu = mu_var_list[[i]])) %>% 
+    bind_rows() %>% 
+    select(estimate, p.value) %>% 
+    summarize(
+      total = n(),
+      reject_h0 = sum(p.value <= 0.05),
+      mu = mu_var_list[[i]]
+      )
+}
+
+prop_reject_df = 
+  as.data.frame(
+    do.call(rbind, lapply(output_all, 
+                          function(x) { unlist(x) }
+                          ))
+    ) %>% 
+  mutate(prop_reject = reject_h0/total) %>% 
+  select(-total, -reject_h0)
+
+prop_reject_df %>% 
+  ggplot(aes(x = mu, y = prop_reject)) + 
+  geom_point() + 
+  geom_smooth(se = FALSE) + 
+  labs(title = "Proportion null hypothesis rejected for given Mu",
+       y = "proportion H0 rejected"
+         ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 11),
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(vjust = 0.5, hjust = 1),
+    )
+```
+
+From the plot we can see that as mu increases (the true population mean), a greater proportion of null hypotheses are rejected (so power increases). From this, we could say that as 'effect size' increases, power will also increase.
+
+Plot: Showing the average estimate of μ^ (y axis) and the true value of μ (x axis). 
+
+```{r}
+output_est = vector("list", length = 6)
+
+for (i in 1:6) {
+  
+    output_est[[i]] = 
+      rerun(5000, hypoth_test(mu = mu_var_list[[i]])
+            ) %>% 
+      bind_rows() %>% 
+      mutate(mu = mu_var_list[[i]]) %>% 
+      select(estimate, mu) %>% 
+      group_by(mu) %>% 
+      summarize(
+        avg_est_mu = mean(estimate)
+      )
+}
+
+mu_est_df = as.data.frame(
+  do.call(rbind, lapply(output_est, function(x) 
+  { unlist(x) }
+  )))
+
+mu_est_df %>% 
+  ggplot(aes(x = mu, y = avg_est_mu)) + 
+  geom_point() + 
+  geom_path() + 
+  labs(title = "Average estimate of mu in samples versus true mu",
+       y = "μ^ (average estimate)", 
+       x = "μ"
+         ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 11),
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(vjust = 0.5, hjust = 1),
+    )
+  
+```
+
+Second plot: Average estimate of μ^ only in samples for which the null was rejected (y axis) and the true value of μ (x axis).
+
+```{r}
+output_reject = vector("list", length = 6)
+
+for (i in 1:6) {
+  
+    output_reject[[i]] = 
+      rerun(5000, hypoth_test(mu = mu_var_list[[i]])) %>% 
+      bind_rows() %>% 
+      mutate(mu = mu_var_list[[i]]) %>% 
+      select(estimate, mu, p.value) %>%
+      filter(p.value<= 0.05) %>% 
+      select(estimate, mu) %>% 
+      group_by(mu) %>% 
+      summarize(
+        avg_est_rej = mean(estimate)
+      )
+}
+
+mu_est_rej = as.data.frame(
+  do.call(rbind, lapply(output_reject, function(x) 
+  { unlist(x) }
+  )))
+
+mu_est_rej %>% 
+  ggplot(aes(x = mu, y = avg_est_rej)) + 
+  geom_point() + 
+  geom_path() + 
+  labs(title = "Average estimate of mu in samples that rejected H0 versus true mu",
+       y = "μ^ (average estimate)", 
+       x = "μ"
+         ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 11),
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(vjust = 0.5, hjust = 1),
+    )
+```
+
+This plot demonstrates that the sample average of μ^, across tests where the null is rejected, is approximately equal to the true value of μ after μ reaches about 4 (for μ = 4 to 6). When μ is 0 to 3, the sample average of μ^ tends to slightly overestimate the μ.
