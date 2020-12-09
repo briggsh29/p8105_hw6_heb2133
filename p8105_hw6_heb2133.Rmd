@@ -150,9 +150,11 @@ Propose model for birthweight:
 
 The hypothesized predictors that I wanted to explore in their potential contribution to birthweight are: 1) Gestational age 2) Maternal race 3) Family monthly income 4) Mother's weight gain during pregnancy and 5) Mother's age at delivery. Knowing that gestational age does have an impact on infant birthweight, I wanted to also introduce and examine predictors that brought in environmental or socio-demographic factors - like mother's race and family SES (using family income in this dataset). I used white mothers as the reference group in this model. 
 
+Looking at the density plot below examining the residuals for this model, it looks fairly normally distributed. 
+
 ```{r}
 proposed_model_df = 
-  lm(bwt ~ gaweeks + wtgain + momage + mrace, data = bw_df)
+  lm(bwt ~ gaweeks + wtgain + fincome + momage + mrace, data = bw_df)
 
 broom::glance(proposed_model_df)
 
@@ -172,5 +174,67 @@ bw_df %>%
   geom_density()
 ```
 
+Comparing proposed model to two others:
 
-maternal race, mothers age at delivery, 
+1. Using length at birth and gestational age as predictors (main effects only)
+2. Using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+
+```{r}
+main_eff_model = lm(bwt ~ blength + gaweeks, 
+                    data = bw_df)
+
+interaction_model = lm(bwt ~ bhead + blength + babysex + 
+                         bhead*blength + bhead*babysex + blength*babysex +
+               bhead*blength*babysex, 
+               data = bw_df)
+
+cross_df = 
+  crossv_mc(bw_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cross_df = 
+  cross_df %>% 
+  mutate(
+    proposed_model_df = map(.x = train, 
+                            ~lm(bwt ~ gaweeks + wtgain + fincome + 
+                                  momage + mrace, 
+                                data = .x)),
+    main_eff_model = map(.x = train,
+                         ~lm(bwt ~ blength + gaweeks, data = .x)),
+    interaction_model = map(.x = train,
+                            ~lm(bwt ~ bhead + blength + babysex + 
+                                  bhead*blength + bhead*babysex + blength*babysex +
+                                  bhead*blength*babysex,
+                                data = .x))
+  ) %>% 
+  mutate(
+    rmse_proposed = 
+      map2_dbl(.x = proposed_model_df, .y = test, 
+               ~rmse(model = .x, data = .y)),
+    rmse_main_eff = 
+      map2_dbl(.x = main_eff_model, .y = test,
+               ~rmse(model = .x, data = .y)),
+    rmse_interaction = 
+      map2_dbl(.x = interaction_model, .y = test, 
+               ~rmse(model = .x, data = .y))
+  )
+
+cross_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+    ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin(
+  )
+```
+
+By looking at the above violin plots, we can see that model 3 (the interaction model) has the lowest RMSE and so has the greatest prediction accuracy. My proposed model, of the three, has the highest RMSE and so has the least prediction accuracy. 
+
+## Problem 3
