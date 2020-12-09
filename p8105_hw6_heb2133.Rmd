@@ -30,9 +30,9 @@ Read in and prepare data:
 
 Created city_state variable and binary 'solved/unsolved' homicide variable indicating whether the homicide is solved. Limited analysis to those for whom victim_race is white or black.
 
-```{r, warning = F}
+```{r}
 homicide_df = 
-  read.csv("./data/homicide-data.csv") %>% 
+  read.csv("./data/homicide-data.csv", na = c("", "NA", "Unknown")) %>% 
   janitor::clean_names() %>% 
   # add city_state variable
   unite("city_state", city:state, sep = ", ", remove = TRUE) %>%
@@ -45,7 +45,7 @@ homicide_df =
     victim_age = as.numeric(victim_age)
   ) %>% 
   # omit Dallas, Phoenix, Kansas City, and Tulsa, AZ
-  filter(city_state != "Dallas, TX", city_state != "Phoenix, AZ", city_state != "Kansas City, MO", city_state != "Tulsa, AZ") %>% 
+  filter(city_state != "Dallas, TX", city_state != "Phoenix, AZ", city_state != "Kansas City, MO", city_state != "Tulsa, AL") %>% 
   filter(victim_race %in% c("White", "Black")) %>% 
   # changing reference group so that OR in log reg models are 
   # comparing Black victims to white victims 
@@ -69,7 +69,7 @@ glm(resolved ~ victim_age + victim_sex + victim_race,
     CI_upper = exp(estimate + 1.96 * std.error)
   ) %>% 
   select(term, OR, starts_with("CI")) %>% 
-  knitr::kable()
+  knitr::kable(digits = 4)
 ```
 
 The estimated odds of resolving homicides in Baltimore for Black victims is 0.43 times the odds of resolved homicides for white victims. We are 95% confident that this OR lies between 0.31 and 0.61.
@@ -77,6 +77,30 @@ The estimated odds of resolving homicides in Baltimore for Black victims is 0.43
 Run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing Black victims to white victims. 
 
 ```{r}
-homicide_df %>% 
-  nest(data = -city_state)
+model_resuls_df = 
+  homicide_df %>% 
+  nest(data = -city_state) %>% 
+  mutate(
+    models = 
+      map(.x = data, 
+          ~glm(resolved ~ victim_age + victim_sex + victim_race, 
+               data = .x, 
+               family = binomial())),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(city_state, results) %>% 
+  unnest(results) %>% 
+    mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>% 
+  select(city_state, term, OR, starts_with("CI"))
+
+# Extracted OR for each city comparing homicide 
+# resolution for Black victims compared to white victims
+
+model_resuls_df %>% 
+  filter(term == "victim_raceBlack") %>% 
+  knitr::kable(digit = 4)
 ```
