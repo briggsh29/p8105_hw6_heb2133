@@ -326,7 +326,35 @@ boot_results_clean %>%
   ggplot(aes(x = log_est)) + 
   geom_density() + 
   labs(title = "distribution of loglog(β0*β1) from boot strap samples",
-       x = "log(β0*β1")
+       x = "log(β0*β1)")
 ```
 
 The above plots demonstrate the distribution of r^ 2 and log(β0∗β1) from 5000 bootstrap samples of our weather data. From these plots, we can see that these terms are relatively normally distributed. The average of the r^2 terms from these samples seems to be around 9.1. The average of our log(β0∗β1) terms from these samples seems to be between 2.00-2.025. 
+
+Constructing the 95% CI for r^2 : 
+
+```{r}
+boot_results_clean %>% 
+  summarise(
+    point_estimate = mean(r.squared),
+    CI_lower = quantile(r.squared, 0.025),
+    CI_upper = quantile(r.squared, 0.975)
+  ) %>% 
+  knitr::kable(digits = 4)
+```
+
+The point estimate in this table is the average r^2 across all 5000 bootstrap samples. From the above table, we are 95% confident that the true r^2 lies between 0.8940 and 0.9275. 
+
+Constructing the 95% CI for log(β0*β1) :
+
+```{r}
+boot_results_clean %>% 
+  summarise(
+    point_estimate = mean(log_est),
+    CI_lower = quantile(log_est, 0.025),
+    CI_upper = quantile(log_est, 0.975)
+  ) %>% 
+  knitr::kable(digits = 4)
+```
+
+The point estimate in this table is the average log(β0 * β1) across all 5000 bootstrap samples. From the above table, we are 95% confident that the true log(β0*β1) lies between 1.9648 and 2.0593. 
