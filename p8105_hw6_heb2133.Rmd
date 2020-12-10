@@ -265,3 +265,68 @@ weather_df =
 ```
 
 Focusing on simple linear regression with tmax as the response and tmin as the predictor. 
+
+```{r}
+weather_model_df = 
+  lm(tmax ~ tmin, data = weather_df)
+```
+
+Getting quantities of r^2 and log(β0∗β1) using 5000 bootstrap sample:
+
+```{r}
+
+boot_sample = function(df) {
+  
+  sample_frac(df, replace = TRUE)
+  
+}
+
+boot_strap =
+  tibble(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_sample(weather_df))
+  )
+
+boot_results = 
+  boot_strap %>% 
+  mutate(
+    models = map(.x = strap_sample,
+                 ~lm(tmax ~ tmin, 
+                     data = .x)),
+    results_r = map(models, broom::glance),
+    results_log = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results_r, results_log) %>% 
+  unnest(results_r, results_log) %>% 
+  select(strap_number, term, estimate, r.squared)
+
+# cleaning up for plots and final estimates
+boot_results_clean = 
+  boot_results %>% 
+    pivot_wider(
+               names_from = term,
+               values_from = estimate
+               ) %>% 
+  rename("intercept" = "(Intercept)") %>% 
+  mutate(
+    log_est = log(intercept*tmin)
+  ) %>% 
+  select(-intercept, -tmin)
+```
+
+Plotting distribution of estimates: 
+
+```{r}
+boot_results_clean %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density() + 
+  labs(title = "distribution of r^2 from boot strap samples")
+
+boot_results_clean %>% 
+  ggplot(aes(x = log_est)) + 
+  geom_density() + 
+  labs(title = "distribution of loglog(β0*β1) from boot strap samples",
+       x = "log(β0*β1")
+```
+
+The above plots demonstrate the distribution of r^ 2 and log(β0∗β1) from 5000 bootstrap samples of our weather data. From these plots, we can see that these terms are relatively normally distributed. The average of the r^2 terms from these samples seems to be around 9.1. The average of our log(β0∗β1) terms from these samples seems to be between 2.00-2.025. 
